@@ -1201,56 +1201,29 @@ begin
 
     Buf[n] := LStreamBuffer[LStreamIndex];
     Inc(LStreamIndex);
-    (*
-    if SmartFeed then begin
-      case Buf[n] of
-        JvCsvQuote: {34} // quote
-          if not IgnoreQuote then  // if ignore of quotes enabled then doesn't set Quote Flag
-            QuoteFlag := not QuoteFlag;
-        JvCsvCR,JvCsvLf: {13} // carriage return or linefeed for support Unix and MacOS files
-          begin
-            if not QuoteFlag then begin
-              { If it is a CRLF we must skip the LF. Otherwise the next call to ReadLine
-                would return an empty line. }
-              if LStreamIndex >= LStreamSize then
-                FillStreamBuffer;
-              if LStreamBuffer[LStreamIndex] in [JvCsvLf,JvCsvCR] then
-                Inc(LStreamIndex);
-              // for Windows files: if CR now, then skip LF
-              if (LStreamBuffer[LStreamIndex] = JvCsvLf) and (LStreamBuffer[LStreamIndex - 1] = JvCsvCR) then
-                Inc(LStreamIndex);
+    case Buf[n] of
+      JvCsvQuote: {34} // quote
+        if not IgnoreQuote then
+          QuoteFlag := not QuoteFlag;
 
-              Break;
-            end;
-          end
-      end
-    end
-    else begin
-    *)
-      case Buf[n] of
-        JvCsvQuote: {34} // quote
-          if not IgnoreQuote then
-            QuoteFlag := not QuoteFlag;
-
-        JvCsvLf: {10} // linefeed
+      JvCsvLf: {10} // linefeed
+        if not QuoteFlag then
+          Break;
+      JvCsvCR: {13} // carrige return
+        begin
           if not QuoteFlag then
-            Break;
-        JvCsvCR: {13} // carrige return
           begin
-            if not QuoteFlag then
-            begin
-              { If it is a CRLF we must skip the LF. Otherwise the next call to ReadLine
-                would return an empty line. }
-              if LStreamIndex >= LStreamSize then
-                FillStreamBuffer;
-              if LStreamBuffer[LStreamIndex] in [JvCsvLf,JvCsvCR] then
-                Inc(LStreamIndex);
+            { If it is a CRLF we must skip the LF. Otherwise the next call to ReadLine
+              would return an empty line. }
+            if LStreamIndex >= LStreamSize then
+              FillStreamBuffer;
+            if LStreamBuffer[LStreamIndex] in [JvCsvLf,JvCsvCR] then
+              Inc(LStreamIndex);
 
-              Break;
-            end;
-          end
-      end;
-    //end;
+            Break;
+          end;
+        end
+    end;
     Inc(n);
   end;
   FStreamIndex := LStreamIndex;

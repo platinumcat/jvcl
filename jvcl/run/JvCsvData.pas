@@ -398,7 +398,7 @@ type
 
     procedure _StreamReadBufInit;
   public
-    function ReadLine: RawByteString;   { read a string, one per line, wow. Text files. Cool eh?}
+    function ReadLine(IgnoreQuote : boolean) : RawByteString;   { read a string, one per line, wow. Text files. Cool eh?}
 
     procedure Append;
     procedure Rewrite;
@@ -529,6 +529,9 @@ type
     FAlwaysEnquoteFloats: Boolean; // Always put Double quotes around floating point values (useful when DecimalSeparator==CsvSeparator)
     FUseSystemDecimalSeparator: Boolean; // Default is false which always uses US mode.
     FAppendOnly: Boolean; // If true, we don't load the entire content of the CSV from disk, only the last row, and every time we append and write, we only maintain the last row in memory (saves a lot of RAM.)
+
+    { Enable Ignoring Quote }
+    FEnableIgnoreQuote : boolean;
 
     procedure SetActive(Value: Boolean); override;
 
@@ -801,6 +804,10 @@ type
     property OnSpecialData: TJvCsvOnSpecialData read FOnSpecialData write FOnSpecialData;
     property OnGetFieldData: TJvCsvOnGetFieldData read FOnGetFieldData write FOnGetFieldData;
     property OnSetFieldData: TJvCsvOnSetFieldData read FOnSetFieldData write FOnSetFieldData;
+
+    {Enable ignoring quote }
+    property EnableIgnoreQuote : boolean read FEnableIgnoreQuote write FEnableIgnoreQuote default False;
+
   public
     { these MUST be available at runtime even when the object is of the Custom base class type
       This enables interoperability at design time between non-visual helper components
@@ -887,7 +894,9 @@ type
     property AlwaysEnquoteStrings;
     property AlwaysEnquoteFloats;
     property UseSystemDecimalSeparator;
-    property AppendOnly; 
+    property AppendOnly;
+    { Enable ingoring quote when reading row }
+    property EnableIgnoreQuote;
   end;
 
 { CSV string Processing Functions }
@@ -1142,7 +1151,7 @@ end;
 
   This code is entirely new in JVCL 3.36 or later, added in September 2008.
 }
-function TJvCsvStream.ReadLine: RawByteString;
+function TJvCsvStream.ReadLine(IgnoreQuote : boolean) : RawByteString;
 var
   Buf: array of AnsiChar;
   n: Integer;
@@ -1192,28 +1201,56 @@ begin
 
     Buf[n] := LStreamBuffer[LStreamIndex];
     Inc(LStreamIndex);
-
-    case Buf[n] of
-      JvCsvQuote: {34} // quote
-        QuoteFlag := not QuoteFlag;
-      JvCsvLf: {10} // linefeed
-        if not QuoteFlag then
-          Break;
-      JvCsvCR: {13} // carriage return
-        begin
-          if not QuoteFlag then
+    (*
+    if SmartFeed then begin
+      case Buf[n] of
+        JvCsvQuote: {34} // quote
+          if not IgnoreQuote then  // if ignore of quotes enabled then doesn't set Quote Flag
+            QuoteFlag := not QuoteFlag;
+        JvCsvCR,JvCsvLf: {13} // carriage return or linefeed for support Unix and MacOS files
           begin
-            { If it is a CRLF we must skip the LF. Otherwise the next call to ReadLine
-              would return an empty line. }
-            if LStreamIndex >= LStreamSize then
-              FillStreamBuffer;
-            if LStreamBuffer[LStreamIndex] = JvCsvLf then
-              Inc(LStreamIndex);
+            if not QuoteFlag then begin
+              { If it is a CRLF we must skip the LF. Otherwise the next call to ReadLine
+                would return an empty line. }
+              if LStreamIndex >= LStreamSize then
+                FillStreamBuffer;
+              if LStreamBuffer[LStreamIndex] in [JvCsvLf,JvCsvCR] then
+                Inc(LStreamIndex);
+              // for Windows files: if CR now, then skip LF
+              if (LStreamBuffer[LStreamIndex] = JvCsvLf) and (LStreamBuffer[LStreamIndex - 1] = JvCsvCR) then
+                Inc(LStreamIndex);
 
+              Break;
+            end;
+          end
+      end
+    end
+    else begin
+    *)
+      case Buf[n] of
+        JvCsvQuote: {34} // quote
+          if not IgnoreQuote then
+            QuoteFlag := not QuoteFlag;
+
+        JvCsvLf: {10} // linefeed
+          if not QuoteFlag then
             Break;
-          end;
-        end
-    end;
+        JvCsvCR: {13} // carrige return
+          begin
+            if not QuoteFlag then
+            begin
+              { If it is a CRLF we must skip the LF. Otherwise the next call to ReadLine
+                would return an empty line. }
+              if LStreamIndex >= LStreamSize then
+                FillStreamBuffer;
+              if LStreamBuffer[LStreamIndex] in [JvCsvLf,JvCsvCR] then
+                Inc(LStreamIndex);
+
+              Break;
+            end;
+          end
+      end;
+    //end;
     Inc(n);
   end;
   FStreamIndex := LStreamIndex;
@@ -3629,7 +3666,7 @@ begin
       FCsvStream.Stream.Position := 0; // rewind.
 
     if FHasHeaderRow then
-      Line := JvTrimAnsiStringCrLf(FCsvStream.ReadLine);
+      Line := JvTrimAnsiStringCrLf(FCsvStream.ReadLine(EnableIgnoreQuote));
 
     {$IFDEF UNICODE}
     //-------------------------------------------------------------------------
@@ -3798,7 +3835,7 @@ begin
     begin
       while not FCsvStream.Eof do
       begin
-        CsvLine := JvTrimAnsiStringCrLf(FCsvStream.ReadLine);// leading space, trailing space and crlf are removed by Trim!
+        CsvLine := JvTrimAnsiStringCrLf(FCsvStream.ReadLine(EnableIgnoreQuote));// leading space, trailing space and crlf are removed by Trim!
         if CsvLine <> '' then
         begin
           if (FSpecialDataMarker <> '')
